@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road-E | ממשק בקרה ושליטה</title>
+    <!-- Leaflet CSS for OpenStreetMap -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        /* suckless-inspired minimalist dark theme */
+        :root {
+            --bg: #121417;
+            --panel: #1a1d22;
+            --border: #333842;
+            --text: #c5cdd9;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warn: #f59e0b;
+            --font: 'Courier New', Courier, monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: var(--font);
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            letter-spacing: 1px;
+            color: #fff;
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+
+        .badge.online {
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        .badge.offline {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 12px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 10px;
+        }
+
+        .panel-title {
+            font-weight: bold;
+            color: #fff;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Camera Feed & AI Overlay */
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 240px;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .ai-overlay {
+            position: absolute;
+            border: 2px solid var(--warn);
+            background: rgba(245, 158, 11, 0.2);
+            color: #fff;
+            font-size: 0.75rem;
+            padding: 2px 4px;
+            top: 35%;
+            left: 25%;
+            width: 45%;
+            height: 30%;
+            box-sizing: border-box;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+        }
+
+        .ai-log {
+            margin-top: 6px;
+            background: #000;
+            border: 1px solid var(--border);
+            padding: 6px;
+            font-size: 0.8rem;
+            color: var(--warn);
+            min-height: 42px;
+        }
+
+        /* Sensors Telemetry */
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .metric {
+            border: 1px solid var(--border);
+            padding: 6px;
+            background: var(--bg);
+        }
+
+        .metric-label {
+            font-size: 0.7rem;
+            color: #888;
+        }
+
+        .metric-val {
+            font-size: 1rem;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        /* Controls Panel */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            max-width: 220px;
+            margin: 0 auto;
+        }
+
+        button {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9rem;
+            user-select: none;
+        }
+
+        button:hover {
+            background: var(--border);
+            color: #fff;
+        }
+
+        button:active {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-full {
+            grid-column: span 3;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .btn-group button {
+            flex: 1;
+            padding: 6px;
+            font-size: 0.8rem;
+        }
+
+        button.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        /* Map */
+        #map {
+            width: 100%;
+            height: 200px;
+            border: 1px solid var(--border);
+            background: #000;
+        }
+
+        /* Console Output */
+        .console {
+            background: #000;
+            color: var(--success);
+            border: 1px solid var(--border);
+            height: 80px;
+            padding: 6px;
+            font-size: 0.75rem;
+            overflow-y: auto;
+        }
+
+        /* Leaflet Dark mode override */
+        .leaflet-tile {
+            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>ROAD-E // CENTER</h1>
+            <span style="font-size:0.75rem; color:#666;">אורט עירוני ד' מודיעין | תשפ"ז</span>
+        </div>
+        <div style="text-align: left;">
+            <div id="statusBadge" class="badge online">ESP32: מחובר</div>
+            <div id="ipAddr" style="font-size: 0.7rem; color: #888; margin-top:2px;">IP: 192.168.4.1</div>
+        </div>
+    </header>
+
+    <div class="grid">
+        
+        <!-- Panel 1: Video Feed & AI Detection -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>[1] מצלמה & זיהוי מפגעים (AI)</span>
+                <span style="color:var(--accent); font-size:0.8rem;">ESP-S3 CAM</span>
+            </div>
+            <div class="video-container">
+                <!-- Placeholder image / Simulated stream -->
+                <img id="videoFeed" class="video-feed" src="https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=600&q=80" alt="ESP32 Stream">
+                
+                <!-- Bounding box simulation -->
+                <div class="ai-overlay" id="aiBox">
+                    <span>[!] מפגע: בור בכביש (88%)</span>
+                </div>
+            </div>
+            <div class="ai-log" id="aiLog">
+                <strong>> ניתוח AI (בזמן אמת):</strong> זיהוי סדק עמוק/בור בכביש בנתיב הימני. מומלץ לתעד נתוני GPS.
+            </div>
+        </div>
+
+        <!-- Panel 2: Telemetry / Sensors -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>[2] חיישנים ונתוני סביבה</span>
+                <span style="color:var(--accent); font-size:0.8rem;">TELEMETRY</span>
+            </div>
+            <div class="telemetry-grid">
+                <div class="metric">
+                    <div class="metric-label">מרחק מכשול (LIDAR)</div>
+                    <div class="metric-val" id="valLidar">142 ס"מ</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">רמת אור (LDR)</div>
+                    <div class="metric-val" id="valLdr">18% (חשוך)</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">טמפרטורה (AHT10)</div>
+                    <div class="metric-val" id="valTemp">24.5 °C</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">לחות (AHT10)</div>
+                    <div class="metric-val" id="valHum">58%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">מעקב קו (IR)</div>
+                    <div class="metric-val" id="valIr" style="color:var(--success)">תקין (L:0 R:0)</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">מתח סוללה</div>
+                    <div class="metric-val" id="valBatt" style="color:var(--success)">11.8V (82%)</div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 8px;">
+                <div style="font-size:0.75rem; color:#888; margin-bottom:2px;">מיקום GPS:</div>
+                <div style="font-size:0.85rem; color:#fff;" id="gpsCoords">31.8903° N, 35.0104° E (מודיעין-מכבים-רעות)</div>
+            </div>
+        </div>
+
+        <!-- Panel 3: Robot Movement Controls -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>[3] בקרת נסיעה ומצבים</span>
+                <span style="color:var(--accent); font-size:0.8rem;">DRIVE</span>
+            </div>
+            
+            <div class="btn-group" style="margin-bottom: 10px;">
+                <button id="modeManual" class="active" onclick="setDriveMode('manual')">ידני (שלט/מקלדת)</button>
+                <button id="modeAuto" onclick="setDriveMode('auto')">אוטונומי (מעקב קו)</button>
+            </div>
+
+            <div class="controls-grid">
+                <div></div>
+                <button onclick="sendCommand('FORWARD')">▲<br>קדימה</button>
+                <div></div>
+                <button onclick="sendCommand('RIGHT')">►<br>ימינה</button>
+                <button onclick="sendCommand('STOP')" style="background:var(--danger); color:#fff;">■<br>עצור</button>
+                <button onclick="sendCommand('LEFT')">◄<br>שמאלה</button>
+                <div></div>
+                <button onclick="sendCommand('BACKWARD')">▼<br>אחורה</button>
+                <div></div>
+            </div>
+
+            <div style="font-size:0.75rem; color:#888; text-align:center; margin-top:8px;">
+                ניתן לשלוט גם באמצעות מקשי החצים במקלדת / מקשי WASD
+            </div>
+        </div>
+
+        <!-- Panel 4: Peripherals & Actuators -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>[4] תאורה, שמע ומסך OLED</span>
+                <span style="color:var(--accent); font-size:0.8rem;">ACTUATORS</span>
+            </div>
+
+            <div style="margin-bottom: 8px;">
+                <label style="font-size:0.8rem; display:block; margin-bottom:4px;">תאורת חזית (Neo-LED WS2812):</label>
+                <div class="btn-group">
+                    <button id="ledAuto" class="active" onclick="setLedMode('auto')">אוטומטי (LDR)</button>
+                    <button id="ledOn" onclick="setLedMode('on')">דלוק (100%)</button>
+                    <button id="ledOff" onclick="setLedMode('off')">כבוי</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 8px;">
+                <label style="font-size:0.8rem; display:block; margin-bottom:4px;">מערכת כריזה ושמע (MP3 Module):</label>
+                <div class="btn-group">
+                    <button onclick="sendAudio('ALERT')">🔊 התראת הולכי רגל</button>
+                    <button onclick="sendAudio('SCAN')">🔊 כריזת סריקה</button>
+                    <button onclick="sendAudio('MUTE')" style="border-color:var(--border)">🔇 השתק</button>
+                </div>
+            </div>
+
+            <div>
+                <label style="font-size:0.8rem; display:block; margin-bottom:4px;">הודעה למסך OLED ברובוט:</label>
+                <div style="display:flex; gap:4px;">
+                    <input type="text" id="oledText" placeholder="הקלד טקסט להצגה..." style="flex:1; background:var(--bg); border:1px solid var(--border); color:#fff; padding:4px 8px; font-family:var(--font);">
+                    <button onclick="sendOledText()">שלח</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel 5: Map View -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>[5] מעקב מפה (OpenStreetMap)</span>
+                <span style="color:var(--accent); font-size:0.8rem;">GPS MAP</span>
+            </div>
+            <div id="map"></div>
+        </div>
+
+        <!-- Panel 6: Console / Log -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>[6] לוג תקשורת ופקודות (System Console)</span>
+                <span style="color:var(--accent); font-size:0.8rem;">LOGS</span>
+            </div>
+            <div class="console" id="sysLog">
+                [00:00:00] המערכת אותחלה בהצלחה.<br>
+                [00:00:01] חיבור שרת ESP32 בוצע תקין.<br>
+                [00:00:02] חיישן LIDAR מקבל נתונים רציפים.<br>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Leaflet JS for OSM -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // System variables
+        let driveMode = 'manual';
+        let ledMode = 'auto';
+        let robotLat = 31.8903;
+        let robotLng = 35.0104;
+
+        // Leaflet Map Init
+        const map = L.map('map').setView([robotLat, robotLng], 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        const robotMarker = L.marker([robotLat, robotLng]).addTo(map)
+            .bindPopup('<b>Road-E</b><br>רובוט סייר')
+            .openPopup();
+
+        // System Log Function
+        function log(msg) {
+            const sysLog = document.getElementById('sysLog');
+            const time = new Date().toLocaleTimeString();
+            sysLog.innerHTML += `[${time}] ${msg}<br>`;
+            sysLog.scrollTop = sysLog.scrollHeight;
+        }
+
+        // ESP32 Command Transmission (Simulated / Fetch ready)
+        function sendCommand(cmd) {
+            log(`פקודת מנוע: <strong>${cmd}</strong>`);
+            
+            // Example of real ESP32 REST call:
+            // fetch(`/api/control?dir=${cmd}`).catch(err => console.log(err));
+        }
+
+        function setDriveMode(mode) {
+            driveMode = mode;
+            document.getElementById('modeManual').classList.toggle('active', mode === 'manual');
+            document.getElementById('modeAuto').classList.toggle('active', mode === 'auto');
+            log(`מצב נסיעה שונה ל: <strong>${mode === 'auto' ? 'אוטונומי (מעקב קו)' : 'ידני'}</strong>`);
+        }
+
+        function setLedMode(mode) {
+            ledMode = mode;
+            document.getElementById('ledAuto').classList.toggle('active', mode === 'auto');
+            document.getElementById('ledOn').classList.toggle('active', mode === 'on');
+            document.getElementById('ledOff').classList.toggle('active', mode === 'off');
+            log(`מצב תאורת LED שונה ל: <strong>${mode}</strong>`);
+        }
+
+        function sendAudio(type) {
+            log(`נגן שמע (MP3): הופעלה צליל <strong>${type}</strong>`);
+        }
+
+        function sendOledText() {
+            const input = document.getElementById('oledText');
+            if (input.value.trim() !== '') {
+                log(`מסך OLED הודעה נשלחה: "${input.value}"`);
+                input.value = '';
+            }
+        }
+
+        // Keyboard Controls Setup
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName === 'INPUT') return; // Don't trigger if typing in input
+            
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') sendCommand('FORWARD');
+            if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') sendCommand('BACKWARD');
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') sendCommand('LEFT');
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') sendCommand('RIGHT');
+            if (e.key === ' ') sendCommand('STOP');
+        });
+
+        // Telemetry Simulation (Simulates live data from ESP32 sensors)
+        setInterval(() => {
+            // Simulated LIDAR distance
+            const lidarVal = Math.floor(100 + Math.random() * 80);
+            document.getElementById('valLidar').innerText = `${lidarVal} ס"מ`;
+
+            // Simulated LDR (Light level)
+            const ldrVal = Math.floor(10 + Math.random() * 25);
+            document.getElementById('valLdr').innerText = `${ldrVal}% (${ldrVal < 30 ? 'חשוך' : 'מואר'})`;
+
+            // Auto LED logic based on LDR
+            if (ledMode === 'auto') {
+                if (ldrVal < 25) {
+                    // Auto light ON
+                }
+            }
+
+            // Simulate slight GPS movement
+            robotLat += (Math.random() - 0.5) * 0.00005;
+            robotLng += (Math.random() - 0.5) * 0.00005;
+            robotMarker.setLatLng([robotLat, robotLng]);
+            document.getElementById('gpsCoords').innerText = `${robotLat.toFixed(4)}° N, ${robotLng.toFixed(4)}° E`;
+
+        }, 2000);
+    </script>
+</body>
+</html>
