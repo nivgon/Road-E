@@ -1,6 +1,0 @@
-# Road-E
-School Project For Helping Municipalities Helping Their People
-
-THIS PROZECT IS MADE MY THE GOATS NIV GOLDSTEIN AND ARIEL GAL. AND OF COURSE THE GOAT, THE ONE AND ONLY, MEIR KISOS!
-
-
